@@ -1,0 +1,47 @@
+.{
+    // This is the default name used by packages depending on this one. For
+    // example, when a user runs `zig fetch --save <url>`, this field is used
+    // as the key in the `dependencies` table. Although the user can choose a
+    // different name, most users will stick with this provided value.
+    //
+    // It is redundant to include "zig" in this name because it is already
+    // within the Zig package namespace.
+    .name = "gustaf",
+
+    // This is a [Semantic Version](https://semver.org/).
+    // In a future version of Zig it will be used for package deduplication.
+    .version = "0.0.0",
+
+    // This field is optional.
+    // This is currently advisory only; Zig does not yet do anything
+    // with this value.
+    //.minimum_zig_version = "0.11.0",
+
+    // This field is optional.
+    // Each dependency must either provide a `url` and `hash`, or a `path`.
+    // `zig build --fetch` can be used to fetch all dependencies of a package, recursively.
+    // Once all dependencies are fetched, `zig build` no longer requires
+    // internet connectivity.
+    .dependencies = .{
+        .@"generational-arena" = .{
+            .url = "git+https://github.com/dylanblokhuis/generational-arena?ref=master#6a3f0fd1e9cb7c284ed6e9c14cc556da7413c7ed",
+            .hash = "12209fbbe567808e7c31f039adbb508ae18ae488278c76096d99996c5fee754c02a7",
+        },
+        .raylib = .{
+            .url = "git+https://github.com/raysan5/raylib?ref=master#13178b9373cebffb97a4ff66b734bacbb9d8758d",
+            .hash = "1220b56f2103f4860ca713d5e6f148678386fd0a6ba15f54e4bf04113dc7a089b7ee",
+        },
+        .zm = .{
+            .url = "https://github.com/griush/zm/archive/1005eae8caa6ba24e0fabf3b22605e9cf775edab.tar.gz",
+            .hash = "1220a9ca19ab2af512c7383533855d5d8a3a70564d0451cde52b8b90dbeede0faa53",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        // For example...
+        //"LICENSE",
+        //"README.md",
+    },
+}
