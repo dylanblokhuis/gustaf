@@ -28,8 +28,8 @@
             .hash = "12209fbbe567808e7c31f039adbb508ae18ae488278c76096d99996c5fee754c02a7",
         },
         .raylib = .{
-            .url = "git+https://github.com/raysan5/raylib?ref=master#13178b9373cebffb97a4ff66b734bacbb9d8758d",
-            .hash = "1220b56f2103f4860ca713d5e6f148678386fd0a6ba15f54e4bf04113dc7a089b7ee",
+            .url = "https://github.com/raysan5/raylib/archive/474ab48f8be5a68ee505d2bc7ca10b297b988e06.tar.gz",
+            .hash = "122050ea6d41d3443b6bfbc18f9c7d034c84d8de6fe39308828a81368764a255f90f",
         },
         .zm = .{
             .url = "https://github.com/griush/zm/archive/1005eae8caa6ba24e0fabf3b22605e9cf775edab.tar.gz",

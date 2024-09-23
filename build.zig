@@ -23,7 +23,10 @@ pub fn build(b: *std.Build) void {
     });
     exe.linkLibC();
 
-    const raylib = b.dependency("raylib", .{ .target = target, .optimize = optimize });
+    const raylib = b.dependency("raylib", .{
+        .target = target,
+        .optimize = optimize,
+    });
     exe.linkLibrary(raylib.artifact("raylib"));
 
     exe.root_module.addImport(

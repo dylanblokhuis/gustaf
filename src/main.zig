@@ -86,8 +86,10 @@ const Allocator = std.mem.Allocator;
 
 pub const RigidBody = struct {
     mass: f32,
+    inverse_mass: f32,
     center_of_mass: m.Vec3,
     inertia_tensor: m.Mat3,
+    inverse_inertia_tensor: m.Mat3,
     velocity: m.Vec3,
     angular_velocity: m.Vec3,
     position: m.Vec3,
@@ -158,12 +160,20 @@ pub const World = struct {
             }
         }
 
-        std.debug.print("", .{});
+        var inv_mass: f32 = 0.0;
+        var inv_inertia_tensor = m.Mat3.zero();
+
+        if (!is_static and total_mass != 0.0) {
+            inv_mass = 1.0 / total_mass;
+            inv_inertia_tensor = m.mat3Inverse(inertia_tensor);
+        }
 
         return try self.bodies.append(.{
             .mass = total_mass,
+            .inverse_mass = inv_mass,
             .center_of_mass = center_of_mass,
             .inertia_tensor = inertia_tensor,
+            .inverse_inertia_tensor = inv_inertia_tensor,
             .velocity = .{ 0.0, 0.0, 0.0 },
             .angular_velocity = .{ 0.0, 0.0, 0.0 },
             .position = position,
@@ -178,15 +188,158 @@ pub const World = struct {
         return self.bodies.remove(index);
     }
 
-    pub fn update(self: *Self, dt: f32) void {
-        _ = dt; // autofix
+    pub fn update(self: *Self, dt: f32) !void {
+        try self.integrateBodies(dt);
+        const pairs = try self.getPairs();
+
+        std.debug.print("{d} pairs\n", .{pairs.len});
+    }
+
+    fn integrateBodies(self: *Self, dt: f32) !void {
         var iter = self.bodies.denseIterator();
         while (iter.next()) |handle| {
-            _ = handle; // autofix
+            var body = self.bodies.getUnchecked(handle);
+            if (body.is_static) continue;
+
+            // apply gravity
+            const gravity_force = self.gravity * @as(m.Vec3, @splat(body.mass));
+
+            // linear integration
+            const acceleration = gravity_force * @as(m.Vec3, @splat(body.inverse_mass));
+            body.velocity += acceleration * @as(m.Vec3, @splat(dt));
+            body.position += body.velocity * @as(m.Vec3, @splat(dt));
+
+            // Angular integration
+            const external_torque = m.Vec3{ 0.0, 0.0, 0.0 };
+
+            // Angular acceleration: α = I⁻¹ * τ
+            const angular_acceleration = body.inverse_inertia_tensor.multiplyVec3(external_torque);
+            // Update angular velocity: ω(t + Δt) = ω(t) + α * Δt
+            body.angular_velocity += angular_acceleration * @as(m.Vec3, @splat(dt));
+
+            // Update rotation
+            const omega = body.angular_velocity;
+            const omega_mag = m.vec.len(omega);
+
+            if (omega_mag > 0.0) {
+                // Calculate the rotation angle for this time step
+                const theta = omega_mag * dt;
+                // Normalize the angular velocity vector to get the rotation axis
+                const axis = omega / @as(m.Vec3, @splat(omega_mag));
+
+                // Create a quaternion representing the rotation over Δt
+                const half_theta = theta * 0.5;
+                const sin_half_theta = @sin(half_theta);
+                const cos_half_theta = @cos(half_theta);
+
+                var delta_rotation = m.Quat{
+                    .w = cos_half_theta,
+                    .x = axis[0] * sin_half_theta,
+                    .y = axis[1] * sin_half_theta,
+                    .z = axis[2] * sin_half_theta,
+                };
+                delta_rotation = delta_rotation.multiply(body.rotation);
+                delta_rotation.normalize();
+
+                // Update the body's rotation
+                body.rotation = delta_rotation;
+            }
+
+            try self.bodies.set(handle, body);
         }
+    }
+
+    fn getPairs(self: *Self) ![][2]Bodies.Index {
+        // for now, every body collides with every other body
+        var list = std.ArrayList([2]Bodies.Index).init(std.heap.c_allocator);
+        var iter = self.bodies.denseIterator();
+        while (iter.next()) |handle1| {
+            var iter2 = self.bodies.denseIterator();
+            while (iter2.next()) |handle2| {
+                if (handle1.index != handle2.index) {
+                    try list.append(.{
+                        handle1,
+                        handle2,
+                    });
+                }
+            }
+        }
+
+        return list.items;
     }
 };
 
+pub fn main() !void {
+    const allocator = std.heap.c_allocator;
+    var world = World{
+        .bodies = Bodies.init(allocator),
+        .gravity = m.Vec3{ 0.0, -9.81, 0.0 },
+    };
+
+    _ = try world.addBody(
+        .{ 0, 30, 0 },
+        m.Quat.identity(),
+        try voxelCube(allocator, .{ 8, 8, 8 }),
+        .{ 8, 8, 8 },
+        false,
+    );
+    _ = try world.addBody(
+        .{ 0, 0, 0 },
+        m.Quat.identity(),
+        try voxelCube(allocator, .{ 60, 4, 60 }),
+        .{ 60, 4, 60 },
+        true,
+    );
+
+    c.InitWindow(800, 600, "Gustaf");
+    c.SetTargetFPS(60);
+
+    var camera = c.Camera{
+        .position = .{ .x = 0.0, .y = 100.0, .z = 100.0 },
+        .target = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
+        .projection = c.CAMERA_PERSPECTIVE,
+        .fovy = 45.0,
+        .up = .{ .x = 0.0, .y = 1.0, .z = 0.0 },
+    };
+
+    const cube_model = c.LoadModelFromMesh(c.GenMeshCube(1.0, 1.0, 1.0));
+
+    while (!c.WindowShouldClose()) {
+        c.UpdateCamera(&camera, c.CAMERA_ORBITAL);
+
+        try world.update(c.GetFrameTime());
+
+        c.BeginDrawing();
+        c.ClearBackground(c.RAYWHITE);
+
+        c.BeginMode3D(camera);
+        c.SetRandomSeed(0);
+
+        var iter = world.bodies.denseIterator();
+        while (iter.next()) |index| {
+            const body = world.bodies.getUnchecked(index);
+
+            const axis, const angle = m.quatToAxisAngle(body.rotation);
+
+            c.DrawModelEx(
+                cube_model,
+                .{ .x = body.position[0], .y = body.position[1], .z = body.position[2] },
+                .{ .x = axis[0], .y = axis[1], .z = axis[2] },
+                angle,
+                .{
+                    .x = @floatFromInt(body.voxel_grid_size[0]),
+                    .y = @floatFromInt(body.voxel_grid_size[1]),
+                    .z = @floatFromInt(body.voxel_grid_size[2]),
+                },
+                c.ColorFromNormalized(.{ .x = @as(f32, @floatFromInt(c.GetRandomValue(0, 255))) / 255.0, .y = @as(f32, @floatFromInt(c.GetRandomValue(0, 255))) / 255.0, .z = @as(f32, @floatFromInt(c.GetRandomValue(0, 255))) / 255.0, .w = 1.0 }),
+            );
+        }
+        c.EndMode3D();
+        c.EndDrawing();
+    }
+}
+
+// helpers
 fn voxelCube(allocator: Allocator, size: m.UVec3) ![]u8 {
     const volume = size[0] * size[1] * size[2];
     const voxels = try allocator.alloc(u8, volume);
@@ -214,20 +367,4 @@ fn voxelSphere(allocator: Allocator, radius: f32) ![]u8 {
     }
 
     return voxels;
-}
-
-pub fn main() !void {
-    // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
-    const allocator = std.heap.c_allocator;
-    var world = World{
-        .bodies = Bodies.init(allocator),
-        .gravity = m.Vec3{ 0.0, -9.81, 0.0 },
-    };
-
-    _ = try world.addBody(.{ 0, 10, 0 }, m.Quat.identity(), try voxelCube(allocator, .{ 8, 8, 8 }), .{ 8, 8, 8 }, false);
-    _ = try world.addBody(.{ 0, 0, 0 }, m.Quat.identity(), try voxelCube(allocator, .{ 60, 4, 60 }), .{ 60, 4, 60 }, true);
-
-    while (true) {
-        world.update(1.0 / 60.0);
-    }
 }
