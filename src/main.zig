@@ -136,93 +136,82 @@ pub const RigidBody = struct {
                 @floatFromInt(x),
                 @floatFromInt(y),
                 @floatFromInt(z),
-                // } + m.Vec3{ 0.5, 0.5, 0.5 }
             } + m.Vec3{ 0.5, 0.5, 0.5 } - (m.Vec3{ @floatFromInt(a.voxel_grid_size[0]), @floatFromInt(a.voxel_grid_size[1]), @floatFromInt(a.voxel_grid_size[2]) } / m.Vec3{ 2.0, 2.0, 2.0 });
 
             const pos_a_in_b: m.Vec3 = m.vec.xyz(a_to_b.multiplyVec4(m.Vec4{ pos_a[0], pos_a[1], pos_a[2], 1.0 }));
-            // std.debug.print("a_voxel_pos: {d} {d} {d}\n", .{ x, y, z });
-            // std.debug.print("pos_in_a: {d} {d} {d}\n", .{ pos_a[0], pos_a[1], pos_a[2] });
 
             const a_voxel_pos_in_b = pos_a_in_b - m.Vec3{ 0.5, 0.5, 0.5 } + (m.Vec3{ @floatFromInt(b.voxel_grid_size[0]), @floatFromInt(b.voxel_grid_size[1]), @floatFromInt(b.voxel_grid_size[2]) } / m.Vec3{ 2.0, 2.0, 2.0 });
-            // std.debug.print("pos_in_b: {d} {d} {d} ({d} {d} {d})\n", .{ pos_a_in_b[0], pos_a_in_b[1], pos_a_in_b[2], b.position[0], b.position[1], b.position[2] });
-            // std.debug.print("voxel_pos_in_b: {d} {d} {d}\n", .{ a_voxel_pos_in_b[0], a_voxel_pos_in_b[1], a_voxel_pos_in_b[2] });
+
             if (a_voxel_pos_in_b[0] < 0 or a_voxel_pos_in_b[0] >= @as(f32, @floatFromInt(b.voxel_grid_size[0])) or
                 a_voxel_pos_in_b[1] < 0 or a_voxel_pos_in_b[1] >= @as(f32, @floatFromInt(b.voxel_grid_size[1])) or
                 a_voxel_pos_in_b[2] < 0 or a_voxel_pos_in_b[2] >= @as(f32, @floatFromInt(b.voxel_grid_size[2])))
             {
                 continue;
             }
-            // std.debug.print("passed!\n\n", .{});
 
             const voxel_coord_in_b: m.UVec3 = @intFromFloat(a_voxel_pos_in_b);
             std.debug.print("voxel_coord_in_b: {}\n", .{voxel_coord_in_b});
-            // if (voxel_coord_in_b[0] < 0 or voxel_coord_in_b[0] >= b.voxel_grid_size[0] or
-            //     voxel_coord_in_b[1] < 0 or voxel_coord_in_b[1] >= b.voxel_grid_size[1] or
-            //     voxel_coord_in_b[2] < 0 or voxel_coord_in_b[2] >= b.voxel_grid_size[2])
-            // {
-            //     continue;
-            // }
 
             const index_in_b = voxel_coord_in_b[0] + voxel_coord_in_b[1] * b.voxel_grid_size[0] + voxel_coord_in_b[2] * b.voxel_grid_size[0] * b.voxel_grid_size[1];
             if (b.voxels[index_in_b] == 0) {
                 continue;
             }
 
-            const contact_point_world: m.Vec3 = m.vec.xyz(a_transform.multiplyVec4(m.Vec4{ pos_a[0], pos_a[1], pos_a[2], 1.0 }));
+            const contact_point_local = m.Vec3{
+                @floatFromInt(voxel_coord_in_b[0]),
+                @floatFromInt(voxel_coord_in_b[1]),
+                @floatFromInt(voxel_coord_in_b[2]),
+            } + m.Vec3{ 0.5, 0.5, 0.5 };
+            const contact_point_world: m.Vec3 = m.vec.xyz(a_transform.multiplyVec4(m.Vec4{ contact_point_local[0], contact_point_local[1], contact_point_local[2], 1.0 }));
 
             const i: i32 = @intCast(voxel_coord_in_b[0]);
             const j: i32 = @intCast(voxel_coord_in_b[1]);
             const k: i32 = @intCast(voxel_coord_in_b[2]);
 
-            std.debug.print("{d} {d} {d}\n", .{ i, j, k });
+            const nx = @as(i32, @intFromBool(b.occupancy(i - 1, j, k))) - @as(i32, @intFromBool(b.occupancy(i + 1, j, k)));
+            const ny = @as(i32, @intFromBool(b.occupancy(i, j - 1, k))) - @as(i32, @intFromBool(b.occupancy(i, j + 1, k)));
+            const nz = @as(i32, @intFromBool(b.occupancy(i, j, k - 1))) - @as(i32, @intFromBool(b.occupancy(i, j, k + 1)));
 
-            const nx = @as(i32, @intFromBool(b.occupancy(i + 1, j, k))) - @as(i32, @intFromBool(b.occupancy(i - 1, j, k)));
-            const ny = @as(i32, @intFromBool(b.occupancy(i, j + 1, k))) - @as(i32, @intFromBool(b.occupancy(i, j - 1, k)));
-            const nz = @as(i32, @intFromBool(b.occupancy(i, j, k + 1))) - @as(i32, @intFromBool(b.occupancy(i, j, k - 1)));
-
-            var normal_in_b = -m.Vec3{
+            var normal_in_b = m.Vec3{
                 @floatFromInt(nx),
                 @floatFromInt(ny),
                 @floatFromInt(nz),
             };
 
             if (m.vec.len(normal_in_b) == 0.0) {
-                // Handle the case where the normal cannot be computed
-                // TODO: its prob inside, so we continue
-                // continue;
-                // std.debug.print("TODO: normal is default\n", .{});
-                normal_in_b = m.Vec3{ 0.0, 1.0, 0.0 };
-            } else {
-                normal_in_b = m.vec.normalize(normal_in_b);
+                normal_in_b = pos_a_in_b - m.Vec3{
+                    @as(f32, @floatFromInt(i)) + 0.5,
+                    @as(f32, @floatFromInt(j)) + 0.5,
+                    @as(f32, @floatFromInt(k)) + 0.5,
+                };
             }
 
-            // penetration = min_element((sign(normal) - delta) / normal)
-            const px = if (std.math.sign(normal_in_b[0]) > 0.0)
-                (std.math.sign(normal_in_b[0]) - pos_a_in_b[0]) / normal_in_b[0]
-            else
-                (std.math.sign(normal_in_b[0] + 1.0) - pos_a_in_b[0]) / normal_in_b[0];
+            normal_in_b = m.vec.normalize(normal_in_b);
+            const normal_in_world: m.Vec3 = m.quatMulVec3(b.rotation, m.Vec3{ normal_in_b[0], normal_in_b[1], normal_in_b[2] });
 
-            const py = if (std.math.sign(normal_in_b[1]) > 0.0)
-                (std.math.sign(normal_in_b[1]) - pos_a_in_b[1]) / normal_in_b[1]
-            else
-                (std.math.sign(normal_in_b[1] + 1.0) - pos_a_in_b[1]) / normal_in_b[1];
+            const voxel_center_a_world = m.vec.xyz(a_transform.multiplyVec4(m.Vec4{ pos_a[0], pos_a[1], pos_a[2], 1.0 }));
+            const voxel_center_b_world = m.vec.xyz(b_transform.multiplyVec4(m.Vec4{
+                @as(f32, @floatFromInt(i)) + 0.5 - @as(f32, @floatFromInt(b.voxel_grid_size[0])) / 2.0,
+                @as(f32, @floatFromInt(j)) + 0.5 - @as(f32, @floatFromInt(b.voxel_grid_size[1])) / 2.0,
+                @as(f32, @floatFromInt(k)) + 0.5 - @as(f32, @floatFromInt(b.voxel_grid_size[2])) / 2.0,
 
-            const pz = if (std.math.sign(normal_in_b[2]) > 0.0)
-                (std.math.sign(normal_in_b[2]) - pos_a_in_b[2]) / normal_in_b[2]
-            else
-                (std.math.sign(normal_in_b[2] + 1.0) - pos_a_in_b[2]) / normal_in_b[2];
+                1.0,
+            }));
 
-            const penetration = @min(@min(px, py), pz);
+            const overlap = voxel_center_b_world - voxel_center_a_world;
+            const penetration = 1.0 - m.vec.dot(overlap, normal_in_world);
 
-            const normal_in_world: m.Vec3 = m.vec.normalize(m.vec.xyz(b_transform.multiplyVec4(m.Vec4{ normal_in_b[0], normal_in_b[1], normal_in_b[2], 1.0 })));
-            try contacts.append(.{
-                .body_a = a_handle,
-                .body_b = b_handle,
-                .world_position = contact_point_world,
-                .world_normal = normal_in_world,
-                .penetration = penetration,
-            });
-            std.debug.print("[a: {d}] -  {d} {d} {d}\n", .{ a_handle.index, contact_point_world, normal_in_world, penetration });
+            if (penetration > 0.0) {
+                try contacts.append(.{
+                    .body_a = a_handle,
+                    .body_b = b_handle,
+                    .world_position = contact_point_world,
+                    .world_normal = normal_in_world,
+                    .penetration = penetration,
+                    // .penetration = @min(penetration[0], @min(penetration[1], penetration[2])),
+                });
+                std.debug.print("[a: {d}] -  {d} {d} {d}\n", .{ a_handle.index, contact_point_world, normal_in_world, penetration });
+            }
         }
     }
 };
@@ -334,7 +323,9 @@ pub const World = struct {
             std.debug.print("{d} pairs {d} contacts\n", .{ pairs.len, contacts.len });
         }
 
+        // for (0..2) |_| {
         try self.resolveCollisions(contacts);
+        // }
     }
 
     fn integrateBodies(self: *Self, dt: f32) !void {

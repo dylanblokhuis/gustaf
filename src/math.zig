@@ -182,3 +182,10 @@ pub inline fn mulAdd(v0: anytype, v1: anytype, v2: anytype) @TypeOf(v0, v1, v2) 
         }
     }
 }
+
+pub fn quatMulVec3(q: Quat, v: Vec3) Vec3 {
+    const qv = Vec3{ q.x, q.y, q.z };
+    const uv = vec.cross(qv, v);
+    const uuv = vec.cross(qv, uv);
+    return v + uv * (Vec3{ 2.0, 2.0, 2.0 } * Vec3{ q.w, q.w, q.w }) + uuv * Vec3{ 2.0, 2.0, 2.0 };
+}
