@@ -132,29 +132,30 @@ pub const RigidBody = struct {
             const x = index % a.voxel_grid_size[0];
             const y = (index / a.voxel_grid_size[0]) % a.voxel_grid_size[1];
             const z = index / (a.voxel_grid_size[0] * a.voxel_grid_size[1]);
-            const pos_in_a = m.Vec3{
+            const pos_a = m.Vec3{
                 @floatFromInt(x),
                 @floatFromInt(y),
                 @floatFromInt(z),
                 // } + m.Vec3{ 0.5, 0.5, 0.5 }
             } + m.Vec3{ 0.5, 0.5, 0.5 } - (m.Vec3{ @floatFromInt(a.voxel_grid_size[0]), @floatFromInt(a.voxel_grid_size[1]), @floatFromInt(a.voxel_grid_size[2]) } / m.Vec3{ 2.0, 2.0, 2.0 });
 
-            const pos_in_b: m.Vec3 = m.vec.xyz(a_to_b.multiplyVec4(m.Vec4{ pos_in_a[0], pos_in_a[1], pos_in_a[2], 1.0 }));
-            std.debug.print("{d} {d} {d}\n", .{ x, y, z });
-            std.debug.print("{d} {d} {d}\n", .{ pos_in_a[0], pos_in_a[1], pos_in_a[2] });
+            const pos_a_in_b: m.Vec3 = m.vec.xyz(a_to_b.multiplyVec4(m.Vec4{ pos_a[0], pos_a[1], pos_a[2], 1.0 }));
+            // std.debug.print("a_voxel_pos: {d} {d} {d}\n", .{ x, y, z });
+            // std.debug.print("pos_in_a: {d} {d} {d}\n", .{ pos_a[0], pos_a[1], pos_a[2] });
 
-            const voxel_pos_in_b = pos_in_b - m.Vec3{ 0.5, 0.5, 0.5 } + (m.Vec3{ @floatFromInt(b.voxel_grid_size[0]), @floatFromInt(b.voxel_grid_size[1]), @floatFromInt(b.voxel_grid_size[2]) } / m.Vec3{ 2.0, 2.0, 2.0 });
-            std.debug.print("{d} {d} {d} ({d} {d} {d})\n", .{ pos_in_b[0], pos_in_b[1], pos_in_b[2], b.position[0], b.position[1], b.position[2] });
-            // std.debug.print("pos_in_a: {} pos_in_b: {}\n", .{ pos_in_a, pos_in_b });
-            if (voxel_pos_in_b[0] < 0 or voxel_pos_in_b[0] >= @as(f32, @floatFromInt(b.voxel_grid_size[0])) or
-                voxel_pos_in_b[1] < 0 or voxel_pos_in_b[1] >= @as(f32, @floatFromInt(b.voxel_grid_size[1])) or
-                voxel_pos_in_b[2] < 0 or voxel_pos_in_b[2] >= @as(f32, @floatFromInt(b.voxel_grid_size[2])))
+            const a_voxel_pos_in_b = pos_a_in_b - m.Vec3{ 0.5, 0.5, 0.5 } + (m.Vec3{ @floatFromInt(b.voxel_grid_size[0]), @floatFromInt(b.voxel_grid_size[1]), @floatFromInt(b.voxel_grid_size[2]) } / m.Vec3{ 2.0, 2.0, 2.0 });
+            // std.debug.print("pos_in_b: {d} {d} {d} ({d} {d} {d})\n", .{ pos_a_in_b[0], pos_a_in_b[1], pos_a_in_b[2], b.position[0], b.position[1], b.position[2] });
+            // std.debug.print("voxel_pos_in_b: {d} {d} {d}\n", .{ a_voxel_pos_in_b[0], a_voxel_pos_in_b[1], a_voxel_pos_in_b[2] });
+            if (a_voxel_pos_in_b[0] < 0 or a_voxel_pos_in_b[0] >= @as(f32, @floatFromInt(b.voxel_grid_size[0])) or
+                a_voxel_pos_in_b[1] < 0 or a_voxel_pos_in_b[1] >= @as(f32, @floatFromInt(b.voxel_grid_size[1])) or
+                a_voxel_pos_in_b[2] < 0 or a_voxel_pos_in_b[2] >= @as(f32, @floatFromInt(b.voxel_grid_size[2])))
             {
                 continue;
             }
+            // std.debug.print("passed!\n\n", .{});
 
-            const voxel_coord_in_b: m.UVec3 = @intFromFloat(@floor(voxel_pos_in_b));
-            // std.debug.print("voxel_coord_in_b: {}\n", .{voxel_coord_in_b});
+            const voxel_coord_in_b: m.UVec3 = @intFromFloat(a_voxel_pos_in_b);
+            std.debug.print("voxel_coord_in_b: {}\n", .{voxel_coord_in_b});
             // if (voxel_coord_in_b[0] < 0 or voxel_coord_in_b[0] >= b.voxel_grid_size[0] or
             //     voxel_coord_in_b[1] < 0 or voxel_coord_in_b[1] >= b.voxel_grid_size[1] or
             //     voxel_coord_in_b[2] < 0 or voxel_coord_in_b[2] >= b.voxel_grid_size[2])
@@ -167,7 +168,7 @@ pub const RigidBody = struct {
                 continue;
             }
 
-            const contact_point_world: m.Vec3 = m.vec.xyz(a_transform.multiplyVec4(m.Vec4{ pos_in_a[0], pos_in_a[1], pos_in_a[2], 1.0 }));
+            const contact_point_world: m.Vec3 = m.vec.xyz(a_transform.multiplyVec4(m.Vec4{ pos_a[0], pos_a[1], pos_a[2], 1.0 }));
 
             const i: i32 = @intCast(voxel_coord_in_b[0]);
             const j: i32 = @intCast(voxel_coord_in_b[1]);
@@ -197,19 +198,19 @@ pub const RigidBody = struct {
 
             // penetration = min_element((sign(normal) - delta) / normal)
             const px = if (std.math.sign(normal_in_b[0]) > 0.0)
-                (std.math.sign(normal_in_b[0]) - pos_in_b[0]) / normal_in_b[0]
+                (std.math.sign(normal_in_b[0]) - pos_a_in_b[0]) / normal_in_b[0]
             else
-                (std.math.sign(normal_in_b[0] + 1.0) - pos_in_b[0]) / normal_in_b[0];
+                (std.math.sign(normal_in_b[0] + 1.0) - pos_a_in_b[0]) / normal_in_b[0];
 
             const py = if (std.math.sign(normal_in_b[1]) > 0.0)
-                (std.math.sign(normal_in_b[1]) - pos_in_b[1]) / normal_in_b[1]
+                (std.math.sign(normal_in_b[1]) - pos_a_in_b[1]) / normal_in_b[1]
             else
-                (std.math.sign(normal_in_b[1] + 1.0) - pos_in_b[1]) / normal_in_b[1];
+                (std.math.sign(normal_in_b[1] + 1.0) - pos_a_in_b[1]) / normal_in_b[1];
 
             const pz = if (std.math.sign(normal_in_b[2]) > 0.0)
-                (std.math.sign(normal_in_b[2]) - pos_in_b[2]) / normal_in_b[2]
+                (std.math.sign(normal_in_b[2]) - pos_a_in_b[2]) / normal_in_b[2]
             else
-                (std.math.sign(normal_in_b[2] + 1.0) - pos_in_b[2]) / normal_in_b[2];
+                (std.math.sign(normal_in_b[2] + 1.0) - pos_a_in_b[2]) / normal_in_b[2];
 
             const penetration = @min(@min(px, py), pz);
 
@@ -581,7 +582,7 @@ pub fn main() !void {
     c.SetTargetFPS(60);
 
     var camera = c.Camera{
-        .position = .{ .x = 0.0, .y = 20.0, .z = 20.0 },
+        .position = .{ .x = 0.0, .y = 10.0, .z = 10.0 },
         .target = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
         .projection = c.CAMERA_PERSPECTIVE,
         .fovy = 45.0,
