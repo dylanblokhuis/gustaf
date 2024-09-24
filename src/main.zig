@@ -97,8 +97,120 @@ pub const RigidBody = struct {
     voxels: []u8,
     voxel_grid_size: m.UVec3,
     is_static: bool,
+
+    fn modelMatrix(self: RigidBody) m.Mat4 {
+        const mat1 = m.Mat4.translationVec3(self.position);
+        const mat2 = m.Mat4.fromQuaternion(self.rotation);
+        // const mat3 = m.Mat4.scaling(
+        //     @floatFromInt(self.voxel_grid_size[0]),
+        //     @floatFromInt(self.voxel_grid_size[1]),
+        //     @floatFromInt(self.voxel_grid_size[2]),
+        // );
+        return mat1.multiply(mat2);
+    }
+
+    fn occupancy(self: RigidBody, x: i32, y: i32, z: i32) bool {
+        if (x < 0 or x >= @as(i32, @intCast(self.voxel_grid_size[0])) or
+            y < 0 or y >= @as(i32, @intCast(self.voxel_grid_size[1])) or
+            z < 0 or z >= @as(i32, @intCast(self.voxel_grid_size[2])))
+        {
+            return false;
+        }
+
+        const index = x + y * @as(i32, @intCast(self.voxel_grid_size[0])) + z * @as(i32, @intCast(self.voxel_grid_size[0])) * @as(i32, @intCast(self.voxel_grid_size[1]));
+        return self.voxels[@intCast(index)] != 0;
+    }
+
+    pub fn collidesWith(a: RigidBody, b: RigidBody, a_handle: Bodies.Index, b_handle: Bodies.Index, contacts: *std.ArrayList(ContactPoint)) !void {
+        const a_transform = a.modelMatrix();
+        const b_transform = b.modelMatrix();
+        const a_to_b = b_transform.inverse().multiply(a_transform);
+
+        for (0..a.voxels.len) |index| {
+            if (a.voxels[index] == 0) continue;
+
+            const x = index % a.voxel_grid_size[0];
+            const y = (index / a.voxel_grid_size[0]) % a.voxel_grid_size[1];
+            const z = index / (a.voxel_grid_size[0] * a.voxel_grid_size[1]);
+            const pos_in_a = m.Vec3{
+                @floatFromInt(x),
+                @floatFromInt(y),
+                @floatFromInt(z),
+                // } + m.Vec3{ 0.5, 0.5, 0.5 }
+            } + m.Vec3{ 0.5, 0.5, 0.5 } - (m.Vec3{ @floatFromInt(a.voxel_grid_size[0]), @floatFromInt(a.voxel_grid_size[1]), @floatFromInt(a.voxel_grid_size[2]) } / m.Vec3{ 2.0, 2.0, 2.0 });
+
+            const pos_in_b: m.Vec3 = m.vec.xyz(a_to_b.multiplyVec4(m.Vec4{ pos_in_a[0], pos_in_a[1], pos_in_a[2], 1.0 }));
+
+            // std.debug.print("pos_in_a: {} pos_in_b: {}\n", .{ pos_in_a, pos_in_b });
+            if (pos_in_b[0] < 0 or pos_in_b[0] >= @as(f32, @floatFromInt(b.voxel_grid_size[0])) or
+                pos_in_b[1] < 0 or pos_in_b[1] >= @as(f32, @floatFromInt(b.voxel_grid_size[1])) or
+                pos_in_b[2] < 0 or pos_in_b[2] >= @as(f32, @floatFromInt(b.voxel_grid_size[2])))
+            {
+                continue;
+            }
+
+            const voxel_coord_in_b: m.UVec3 = @intFromFloat(@floor(pos_in_b));
+            // std.debug.print("voxel_coord_in_b: {}\n", .{voxel_coord_in_b});
+            if (voxel_coord_in_b[0] < 0 or voxel_coord_in_b[0] >= b.voxel_grid_size[0] or
+                voxel_coord_in_b[1] < 0 or voxel_coord_in_b[1] >= b.voxel_grid_size[1] or
+                voxel_coord_in_b[2] < 0 or voxel_coord_in_b[2] >= b.voxel_grid_size[2])
+            {
+                continue;
+            }
+
+            const index_in_b = voxel_coord_in_b[0] + voxel_coord_in_b[1] * b.voxel_grid_size[0] + voxel_coord_in_b[2] * b.voxel_grid_size[0] * b.voxel_grid_size[1];
+            if (b.voxels[index_in_b] == 0) {
+                continue;
+            }
+
+            const contact_point_world: m.Vec3 = m.vec.xyz(a_transform.multiplyVec4(m.Vec4{ pos_in_a[0], pos_in_a[1], pos_in_a[2], 1.0 }));
+
+            const i: i32 = @intCast(voxel_coord_in_b[0]);
+            const j: i32 = @intCast(voxel_coord_in_b[1]);
+            const k: i32 = @intCast(voxel_coord_in_b[2]);
+
+            const nx = @as(i32, @intFromBool(b.occupancy(i + 1, j, k))) - @as(i32, @intFromBool(b.occupancy(i - 1, j, k)));
+            const ny = @as(i32, @intFromBool(b.occupancy(i, j + 1, k))) - @as(i32, @intFromBool(b.occupancy(i, j - 1, k)));
+            const nz = @as(i32, @intFromBool(b.occupancy(i, j, k + 1))) - @as(i32, @intFromBool(b.occupancy(i, j, k - 1)));
+
+            var normal_in_b = -m.Vec3{
+                @floatFromInt(nx),
+                @floatFromInt(ny),
+                @floatFromInt(nz),
+            };
+
+            if (m.vec.len(normal_in_b) == 0.0) {
+                // Handle the case where the normal cannot be computed
+                // TODO: its prob inside, so we continue
+                // continue;
+                // std.debug.print("TODO: normal is default\n", .{});
+                normal_in_b = m.Vec3{ 0.0, 1.0, 0.0 };
+            } else {
+                normal_in_b = m.vec.normalize(normal_in_b);
+            }
+
+            const normal_in_world = m.vec.normalize(b_transform.multiplyVec4(m.Vec4{ normal_in_b[0], normal_in_b[1], normal_in_b[2], 0.0 }));
+
+            try contacts.append(.{
+                .body_a = a_handle,
+                .body_b = b_handle,
+                .world_position = contact_point_world,
+                .world_normal = .{ normal_in_world[0], normal_in_world[1], normal_in_world[2] },
+                .penetration = 0.0,
+            });
+        }
+    }
 };
 const Bodies = ga.MultiArena(RigidBody, u16, u16);
+
+const ContactPoint = struct {
+    body_a: Bodies.Index,
+    body_b: Bodies.Index,
+    world_position: m.Vec3,
+    world_normal: m.Vec3,
+    penetration: f32,
+};
+
 pub const World = struct {
     const Self = @This();
     bodies: Bodies,
@@ -191,8 +303,10 @@ pub const World = struct {
     pub fn update(self: *Self, dt: f32) !void {
         try self.integrateBodies(dt);
         const pairs = try self.getPairs();
+        const contacts = try self.getContactPoints(pairs);
 
-        std.debug.print("{d} pairs\n", .{pairs.len});
+        std.debug.print("{d} pairs {d} contacts\n", .{ pairs.len, contacts.len });
+        try self.resolveCollisions(contacts);
     }
 
     fn integrateBodies(self: *Self, dt: f32) !void {
@@ -252,20 +366,131 @@ pub const World = struct {
     fn getPairs(self: *Self) ![][2]Bodies.Index {
         // for now, every body collides with every other body
         var list = std.ArrayList([2]Bodies.Index).init(std.heap.c_allocator);
-        var iter = self.bodies.denseIterator();
-        while (iter.next()) |handle1| {
+
+        var iter1 = self.bodies.denseIterator();
+        while (iter1.next()) |handle1| {
             var iter2 = self.bodies.denseIterator();
             while (iter2.next()) |handle2| {
                 if (handle1.index != handle2.index) {
-                    try list.append(.{
-                        handle1,
-                        handle2,
-                    });
+                    try list.append(.{ handle1, handle2 });
                 }
             }
         }
 
         return list.items;
+    }
+
+    fn getContactPoints(self: *Self, pairs: [][2]Bodies.Index) ![]ContactPoint {
+        var contacts = std.ArrayList(ContactPoint).init(std.heap.c_allocator);
+
+        for (pairs) |pair| {
+            const body1 = self.bodies.getUnchecked(pair[0]);
+            const body2 = self.bodies.getUnchecked(pair[1]);
+            try RigidBody.collidesWith(body1, body2, pair[0], pair[1], &contacts);
+        }
+
+        return contacts.items;
+    }
+
+    // use sequential impulse to resolve collisions
+    fn resolveCollisions(self: *Self, contacts: []ContactPoint) !void {
+        const restitution = 0.5; // Coefficient of restitution (bounciness)
+        const friction = 0.5; // Coefficient of friction
+
+        for (contacts) |contact| {
+            var body_a = self.bodies.getUnchecked(contact.body_a);
+            var body_b = self.bodies.getUnchecked(contact.body_b);
+            if (body_a.is_static and body_b.is_static) continue;
+
+            const ra = contact.world_position - body_a.position;
+            const rb = contact.world_position - body_b.position;
+
+            // Relative velocity at contact point
+            const va = body_a.velocity + m.vec.cross(body_a.angular_velocity, ra);
+            const vb = body_b.velocity + m.vec.cross(body_b.angular_velocity, rb);
+            const relative_velocity = va - vb;
+
+            // Compute relative velocity along the normal
+            const vel_along_normal = m.vec.dot(relative_velocity, contact.world_normal);
+
+            // Do not resolve if velocities are separating
+            if (vel_along_normal > 0) continue;
+
+            // Compute impulse scalar
+            const inv_mass_a = body_a.inverse_mass;
+            const inv_mass_b = body_b.inverse_mass;
+
+            const inv_inertia_a = body_a.inverse_inertia_tensor;
+            const inv_inertia_b = body_b.inverse_inertia_tensor;
+
+            var ra_cross_n = m.vec.cross(ra, contact.world_normal);
+            var rb_cross_n = m.vec.cross(rb, contact.world_normal);
+
+            const inv_inertia_term_a = m.vec.dot(ra_cross_n, inv_inertia_a.multiplyVec3(ra_cross_n));
+            const inv_inertia_term_b = m.vec.dot(rb_cross_n, inv_inertia_b.multiplyVec3(rb_cross_n));
+
+            const denom = inv_mass_a + inv_mass_b + inv_inertia_term_a + inv_inertia_term_b;
+            var j = -(1 + restitution) * vel_along_normal;
+            j /= denom;
+
+            // Apply impulse
+            const impulse = contact.world_normal * @as(m.Vec3, @splat(j));
+
+            if (!body_a.is_static) {
+                body_a.velocity += impulse * @as(m.Vec3, @splat(inv_mass_a));
+                body_a.angular_velocity += inv_inertia_a.multiplyVec3(m.vec.cross(ra, impulse));
+            }
+
+            if (!body_b.is_static) {
+                body_b.velocity -= impulse * @as(m.Vec3, @splat(inv_mass_b));
+                body_b.angular_velocity -= inv_inertia_b.multiplyVec3(m.vec.cross(rb, impulse));
+            }
+
+            // **Friction Impulse**
+            // Compute tangent vector
+            const relative_velocity_after_impulse = (body_a.velocity + m.vec.cross(body_a.angular_velocity, ra)) -
+                (body_b.velocity + m.vec.cross(body_b.angular_velocity, rb));
+
+            var tangent = relative_velocity_after_impulse - contact.world_normal * @as(m.Vec3, @splat(m.vec.dot(relative_velocity_after_impulse, contact.world_normal)));
+            const tangent_length = m.vec.len(tangent);
+            if (tangent_length > 0.0) {
+                tangent /= @as(m.Vec3, @splat(tangent_length));
+
+                // Compute friction impulse scalar
+                ra_cross_n = m.vec.cross(ra, tangent);
+                rb_cross_n = m.vec.cross(rb, tangent);
+
+                const inv_inertia_tangent_a = m.vec.dot(ra_cross_n, inv_inertia_a.multiplyVec3(ra_cross_n));
+                const inv_inertia_tangent_b = m.vec.dot(rb_cross_n, inv_inertia_b.multiplyVec3(rb_cross_n));
+
+                const denom_tangent = inv_mass_a + inv_mass_b + inv_inertia_tangent_a + inv_inertia_tangent_b;
+
+                var jt = -m.vec.dot(relative_velocity_after_impulse, tangent);
+                jt /= denom_tangent;
+
+                // Coulomb's law
+                const mu = friction;
+                const friction_impulse = if (@abs(jt) < j * mu)
+                    tangent * @as(m.Vec3, @splat(jt))
+                else
+                    tangent * @as(m.Vec3, @splat(-j)) * @as(m.Vec3, @splat(mu));
+
+                // Apply friction impulse
+                if (!body_a.is_static) {
+                    body_a.velocity += friction_impulse * @as(m.Vec3, @splat(inv_mass_a));
+                    body_a.angular_velocity += inv_inertia_a.multiplyVec3(m.vec.cross(ra, friction_impulse));
+                }
+
+                if (!body_b.is_static) {
+                    body_b.velocity -= friction_impulse * @as(m.Vec3, @splat(inv_mass_b));
+                    body_b.angular_velocity -= inv_inertia_b.multiplyVec3(m.vec.cross(rb, friction_impulse));
+                }
+            }
+
+            // Update the bodies in the arena
+            try self.bodies.set(contact.body_a, body_a);
+            try self.bodies.set(contact.body_b, body_b);
+        }
     }
 };
 
@@ -277,12 +502,20 @@ pub fn main() !void {
     };
 
     _ = try world.addBody(
-        .{ 0, 30, 0 },
+        .{ 0, 20, 0 },
         m.Quat.identity(),
         try voxelCube(allocator, .{ 8, 8, 8 }),
         .{ 8, 8, 8 },
         false,
     );
+    // _ = try world.addBody(
+    //     .{ 10, 20, 0 },
+    //     m.Quat.fromEulerAngles(.{ m.radians(45.0), m.radians(45.0), m.radians(0.0) }),
+    //     try voxelCube(allocator, .{ 8, 8, 8 }),
+    //     .{ 8, 8, 8 },
+    //     false,
+    // );
+
     _ = try world.addBody(
         .{ 0, 0, 0 },
         m.Quat.identity(),
@@ -291,18 +524,20 @@ pub fn main() !void {
         true,
     );
 
-    c.InitWindow(800, 600, "Gustaf");
+    c.InitWindow(600, 450, "Gustaf");
     c.SetTargetFPS(60);
 
     var camera = c.Camera{
-        .position = .{ .x = 0.0, .y = 100.0, .z = 100.0 },
+        .position = .{ .x = 0.0, .y = 50.0, .z = 50.0 },
         .target = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
         .projection = c.CAMERA_PERSPECTIVE,
         .fovy = 45.0,
         .up = .{ .x = 0.0, .y = 1.0, .z = 0.0 },
     };
 
-    const cube_model = c.LoadModelFromMesh(c.GenMeshCube(1.0, 1.0, 1.0));
+    const cube_mesh = c.GenMeshCube(1.0, 1.0, 1.0);
+
+    const material = c.LoadMaterialDefault();
 
     while (!c.WindowShouldClose()) {
         c.UpdateCamera(&camera, c.CAMERA_ORBITAL);
@@ -319,20 +554,33 @@ pub fn main() !void {
         while (iter.next()) |index| {
             const body = world.bodies.getUnchecked(index);
 
-            const axis, const angle = m.quatToAxisAngle(body.rotation);
-
-            c.DrawModelEx(
-                cube_model,
-                .{ .x = body.position[0], .y = body.position[1], .z = body.position[2] },
-                .{ .x = axis[0], .y = axis[1], .z = axis[2] },
-                angle,
-                .{
-                    .x = @floatFromInt(body.voxel_grid_size[0]),
-                    .y = @floatFromInt(body.voxel_grid_size[1]),
-                    .z = @floatFromInt(body.voxel_grid_size[2]),
-                },
-                c.ColorFromNormalized(.{ .x = @as(f32, @floatFromInt(c.GetRandomValue(0, 255))) / 255.0, .y = @as(f32, @floatFromInt(c.GetRandomValue(0, 255))) / 255.0, .z = @as(f32, @floatFromInt(c.GetRandomValue(0, 255))) / 255.0, .w = 1.0 }),
+            const mat1 = m.Mat4.translationVec3(body.position);
+            const mat2 = m.Mat4.fromQuaternion(body.rotation);
+            const mat3 = m.Mat4.scaling(
+                @floatFromInt(body.voxel_grid_size[0]),
+                @floatFromInt(body.voxel_grid_size[1]),
+                @floatFromInt(body.voxel_grid_size[2]),
             );
+            const model = mat1.multiply(mat2.multiply(mat3)).transpose();
+            material.maps.*.color = .{ .r = @intCast(c.GetRandomValue(0, 255)), .g = @intCast(c.GetRandomValue(0, 255)), .b = @intCast(c.GetRandomValue(0, 255)), .a = 255 };
+            c.DrawMesh(cube_mesh, material, .{
+                .m0 = model.data[0],
+                .m1 = model.data[1],
+                .m2 = model.data[2],
+                .m3 = model.data[3],
+                .m4 = model.data[4],
+                .m5 = model.data[5],
+                .m6 = model.data[6],
+                .m7 = model.data[7],
+                .m8 = model.data[8],
+                .m9 = model.data[9],
+                .m10 = model.data[10],
+                .m11 = model.data[11],
+                .m12 = model.data[12],
+                .m13 = model.data[13],
+                .m14 = model.data[14],
+                .m15 = model.data[15],
+            });
         }
         c.EndMode3D();
         c.EndDrawing();

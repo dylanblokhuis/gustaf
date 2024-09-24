@@ -15,7 +15,7 @@ pub const vec = zm.vec;
 
 pub const UVec3 = @Vector(3, u32);
 pub const Vec3 = zm.Vec3f;
-pub const Vec4 = zm.Vec4d;
+pub const Vec4 = zm.Vec4f;
 pub const Quat = zm.Quaternionf;
 pub const Mat4 = zm.Mat4f;
 pub const Mat3 = zm.Mat3f;
@@ -163,11 +163,11 @@ pub fn mat3Determinant(m: Mat3) f32 {
 }
 pub fn quatToAxisAngle(q: Quat) struct { Vec3, f32 } {
     const angle = 2.0 * acos(q.w);
-    const s = @sqrt(1.0 - q.w * q.w);
-    if (s < 0.001) {
-        return .{ Vec3{ q.x, q.y, q.z }, angle };
-    }
-    return .{ Vec3{ q.x / s, q.y / s, q.z / s }, angle };
+    return .{ Vec3{ q.x, q.y, q.z }, angle };
+}
+
+pub inline fn radians(degrees: f32) f32 {
+    return degrees * math.pi / 180.0;
 }
 
 pub inline fn mulAdd(v0: anytype, v1: anytype, v2: anytype) @TypeOf(v0, v1, v2) {
