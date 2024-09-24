@@ -189,14 +189,32 @@ pub const RigidBody = struct {
                 normal_in_b = m.vec.normalize(normal_in_b);
             }
 
-            const normal_in_world = m.vec.normalize(b_transform.multiplyVec4(m.Vec4{ normal_in_b[0], normal_in_b[1], normal_in_b[2], 0.0 }));
+            // penetration = min_element((sign(normal) - delta) / normal)
+            const px = if (std.math.sign(normal_in_b[0]) > 0.0)
+                (std.math.sign(normal_in_b[0]) - pos_in_b[0]) / normal_in_b[0]
+            else
+                (std.math.sign(normal_in_b[0] + 1.0) - pos_in_b[0]) / normal_in_b[0];
+
+            const py = if (std.math.sign(normal_in_b[1]) > 0.0)
+                (std.math.sign(normal_in_b[1]) - pos_in_b[1]) / normal_in_b[1]
+            else
+                (std.math.sign(normal_in_b[1] + 1.0) - pos_in_b[1]) / normal_in_b[1];
+
+            const pz = if (std.math.sign(normal_in_b[2]) > 0.0)
+                (std.math.sign(normal_in_b[2]) - pos_in_b[2]) / normal_in_b[2]
+            else
+                (std.math.sign(normal_in_b[2] + 1.0) - pos_in_b[2]) / normal_in_b[2];
+
+            const penetration = @min(@min(px, py), pz);
+
+            const normal_in_world: m.Vec3 = m.vec.normalize(m.vec.xyz(b_transform.multiplyVec4(m.Vec4{ normal_in_b[0], normal_in_b[1], normal_in_b[2], 1.0 })));
 
             try contacts.append(.{
                 .body_a = a_handle,
                 .body_b = b_handle,
                 .world_position = contact_point_world,
-                .world_normal = .{ normal_in_world[0], normal_in_world[1], normal_in_world[2] },
-                .penetration = 0.0,
+                .world_normal = normal_in_world,
+                .penetration = penetration,
             });
         }
     }
@@ -396,6 +414,8 @@ pub const World = struct {
     fn resolveCollisions(self: *Self, contacts: []ContactPoint) !void {
         const restitution = 0.5; // Coefficient of restitution (bounciness)
         const friction = 0.5; // Coefficient of friction
+        const percent = 0.8; // Penetration correction percentage (typically between 0.2 and 0.8)
+        const slop = 0.01; // Penetration allowance (prevents jitter)
 
         for (contacts) |contact| {
             var body_a = self.bodies.getUnchecked(contact.body_a);
@@ -487,6 +507,29 @@ pub const World = struct {
                 }
             }
 
+            // **Position Correction**
+            // Calculate the total inverse mass
+            const total_inv_mass = inv_mass_a + inv_mass_b;
+
+            // Skip if total inverse mass is zero (both bodies are static)
+            if (total_inv_mass == 0.0) continue;
+
+            // Compute the penetration depth to correct, considering the slop
+            var penetration_correction = (contact.penetration - slop);
+            if (penetration_correction < 0.0) penetration_correction = 0.0;
+            penetration_correction *= percent / total_inv_mass;
+
+            // Compute the correction vector
+            const correction = contact.world_normal * @as(m.Vec3, @splat(penetration_correction));
+
+            // Apply position correction
+            if (!body_a.is_static) {
+                body_a.position += correction * @as(m.Vec3, @splat(inv_mass_a));
+            }
+            if (!body_b.is_static) {
+                body_b.position -= correction * @as(m.Vec3, @splat(inv_mass_b));
+            }
+
             // Update the bodies in the arena
             try self.bodies.set(contact.body_a, body_a);
             try self.bodies.set(contact.body_b, body_b);
@@ -508,13 +551,13 @@ pub fn main() !void {
         .{ 8, 8, 8 },
         false,
     );
-    // _ = try world.addBody(
-    //     .{ 10, 20, 0 },
-    //     m.Quat.fromEulerAngles(.{ m.radians(45.0), m.radians(45.0), m.radians(0.0) }),
-    //     try voxelCube(allocator, .{ 8, 8, 8 }),
-    //     .{ 8, 8, 8 },
-    //     false,
-    // );
+    _ = try world.addBody(
+        .{ 0, 40, 0 },
+        m.Quat.fromEulerAngles(.{ m.radians(45.0), m.radians(45.0), m.radians(0.0) }),
+        try voxelCube(allocator, .{ 8, 8, 8 }),
+        .{ 8, 8, 8 },
+        false,
+    );
 
     _ = try world.addBody(
         .{ 0, 0, 0 },
@@ -528,7 +571,7 @@ pub fn main() !void {
     c.SetTargetFPS(60);
 
     var camera = c.Camera{
-        .position = .{ .x = 0.0, .y = 50.0, .z = 50.0 },
+        .position = .{ .x = 0.0, .y = 100.0, .z = 100.0 },
         .target = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
         .projection = c.CAMERA_PERSPECTIVE,
         .fovy = 45.0,
