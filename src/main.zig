@@ -140,23 +140,27 @@ pub const RigidBody = struct {
             } + m.Vec3{ 0.5, 0.5, 0.5 } - (m.Vec3{ @floatFromInt(a.voxel_grid_size[0]), @floatFromInt(a.voxel_grid_size[1]), @floatFromInt(a.voxel_grid_size[2]) } / m.Vec3{ 2.0, 2.0, 2.0 });
 
             const pos_in_b: m.Vec3 = m.vec.xyz(a_to_b.multiplyVec4(m.Vec4{ pos_in_a[0], pos_in_a[1], pos_in_a[2], 1.0 }));
+            std.debug.print("{d} {d} {d}\n", .{ x, y, z });
+            std.debug.print("{d} {d} {d}\n", .{ pos_in_a[0], pos_in_a[1], pos_in_a[2] });
 
+            const voxel_pos_in_b = pos_in_b - m.Vec3{ 0.5, 0.5, 0.5 } + (m.Vec3{ @floatFromInt(b.voxel_grid_size[0]), @floatFromInt(b.voxel_grid_size[1]), @floatFromInt(b.voxel_grid_size[2]) } / m.Vec3{ 2.0, 2.0, 2.0 });
+            std.debug.print("{d} {d} {d} ({d} {d} {d})\n", .{ pos_in_b[0], pos_in_b[1], pos_in_b[2], b.position[0], b.position[1], b.position[2] });
             // std.debug.print("pos_in_a: {} pos_in_b: {}\n", .{ pos_in_a, pos_in_b });
-            if (pos_in_b[0] < 0 or pos_in_b[0] >= @as(f32, @floatFromInt(b.voxel_grid_size[0])) or
-                pos_in_b[1] < 0 or pos_in_b[1] >= @as(f32, @floatFromInt(b.voxel_grid_size[1])) or
-                pos_in_b[2] < 0 or pos_in_b[2] >= @as(f32, @floatFromInt(b.voxel_grid_size[2])))
+            if (voxel_pos_in_b[0] < 0 or voxel_pos_in_b[0] >= @as(f32, @floatFromInt(b.voxel_grid_size[0])) or
+                voxel_pos_in_b[1] < 0 or voxel_pos_in_b[1] >= @as(f32, @floatFromInt(b.voxel_grid_size[1])) or
+                voxel_pos_in_b[2] < 0 or voxel_pos_in_b[2] >= @as(f32, @floatFromInt(b.voxel_grid_size[2])))
             {
                 continue;
             }
 
-            const voxel_coord_in_b: m.UVec3 = @intFromFloat(@floor(pos_in_b));
+            const voxel_coord_in_b: m.UVec3 = @intFromFloat(@floor(voxel_pos_in_b));
             // std.debug.print("voxel_coord_in_b: {}\n", .{voxel_coord_in_b});
-            if (voxel_coord_in_b[0] < 0 or voxel_coord_in_b[0] >= b.voxel_grid_size[0] or
-                voxel_coord_in_b[1] < 0 or voxel_coord_in_b[1] >= b.voxel_grid_size[1] or
-                voxel_coord_in_b[2] < 0 or voxel_coord_in_b[2] >= b.voxel_grid_size[2])
-            {
-                continue;
-            }
+            // if (voxel_coord_in_b[0] < 0 or voxel_coord_in_b[0] >= b.voxel_grid_size[0] or
+            //     voxel_coord_in_b[1] < 0 or voxel_coord_in_b[1] >= b.voxel_grid_size[1] or
+            //     voxel_coord_in_b[2] < 0 or voxel_coord_in_b[2] >= b.voxel_grid_size[2])
+            // {
+            //     continue;
+            // }
 
             const index_in_b = voxel_coord_in_b[0] + voxel_coord_in_b[1] * b.voxel_grid_size[0] + voxel_coord_in_b[2] * b.voxel_grid_size[0] * b.voxel_grid_size[1];
             if (b.voxels[index_in_b] == 0) {
@@ -168,6 +172,8 @@ pub const RigidBody = struct {
             const i: i32 = @intCast(voxel_coord_in_b[0]);
             const j: i32 = @intCast(voxel_coord_in_b[1]);
             const k: i32 = @intCast(voxel_coord_in_b[2]);
+
+            std.debug.print("{d} {d} {d}\n", .{ i, j, k });
 
             const nx = @as(i32, @intFromBool(b.occupancy(i + 1, j, k))) - @as(i32, @intFromBool(b.occupancy(i - 1, j, k)));
             const ny = @as(i32, @intFromBool(b.occupancy(i, j + 1, k))) - @as(i32, @intFromBool(b.occupancy(i, j - 1, k)));
@@ -208,7 +214,6 @@ pub const RigidBody = struct {
             const penetration = @min(@min(px, py), pz);
 
             const normal_in_world: m.Vec3 = m.vec.normalize(m.vec.xyz(b_transform.multiplyVec4(m.Vec4{ normal_in_b[0], normal_in_b[1], normal_in_b[2], 1.0 })));
-
             try contacts.append(.{
                 .body_a = a_handle,
                 .body_b = b_handle,
@@ -216,6 +221,7 @@ pub const RigidBody = struct {
                 .world_normal = normal_in_world,
                 .penetration = penetration,
             });
+            std.debug.print("[a: {d}] -  {d} {d} {d}\n", .{ a_handle.index, contact_point_world, normal_in_world, penetration });
         }
     }
 };
@@ -323,7 +329,10 @@ pub const World = struct {
         const pairs = try self.getPairs();
         const contacts = try self.getContactPoints(pairs);
 
-        std.debug.print("{d} pairs {d} contacts\n", .{ pairs.len, contacts.len });
+        if (contacts.len > 0) {
+            std.debug.print("{d} pairs {d} contacts\n", .{ pairs.len, contacts.len });
+        }
+
         try self.resolveCollisions(contacts);
     }
 
@@ -545,25 +554,26 @@ pub fn main() !void {
     };
 
     _ = try world.addBody(
-        .{ 0, 20, 0 },
+        .{ 0, 4, 0 },
         m.Quat.identity(),
-        try voxelCube(allocator, .{ 8, 8, 8 }),
-        .{ 8, 8, 8 },
+        try voxelCube(allocator, .{ 1, 1, 1 }),
+        .{ 1, 1, 1 },
         false,
     );
-    _ = try world.addBody(
-        .{ 0, 40, 0 },
-        m.Quat.fromEulerAngles(.{ m.radians(45.0), m.radians(45.0), m.radians(0.0) }),
-        try voxelCube(allocator, .{ 8, 8, 8 }),
-        .{ 8, 8, 8 },
-        false,
-    );
+    // _ = try world.addBody(
+    //     .{ 0, 40, 0 },
+    //     m.Quat.fromEulerAngles(.{ m.radians(45.0), m.radians(45.0), m.radians(0.0) }),
+    //     try voxelCube(allocator, .{ 1, 1, 1 }),
+    //     .{ 1, 1, 1 },
+    //     false,
+    // );
 
     _ = try world.addBody(
-        .{ 0, 0, 0 },
+        .{ 0, 2, 0 },
         m.Quat.identity(),
-        try voxelCube(allocator, .{ 60, 4, 60 }),
-        .{ 60, 4, 60 },
+        // m.Quat.fromEulerAngles(.{ m.radians(45.0), m.radians(45.0), m.radians(0.0) }),
+        try voxelCube(allocator, .{ 2, 2, 2 }),
+        .{ 2, 2, 2 },
         true,
     );
 
@@ -571,7 +581,7 @@ pub fn main() !void {
     c.SetTargetFPS(60);
 
     var camera = c.Camera{
-        .position = .{ .x = 0.0, .y = 100.0, .z = 100.0 },
+        .position = .{ .x = 0.0, .y = 20.0, .z = 20.0 },
         .target = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
         .projection = c.CAMERA_PERSPECTIVE,
         .fovy = 45.0,
@@ -585,7 +595,9 @@ pub fn main() !void {
     while (!c.WindowShouldClose()) {
         c.UpdateCamera(&camera, c.CAMERA_ORBITAL);
 
-        try world.update(c.GetFrameTime());
+        if (c.IsKeyDown(c.KEY_SPACE)) {
+            try world.update(c.GetFrameTime());
+        }
 
         c.BeginDrawing();
         c.ClearBackground(c.RAYWHITE);
