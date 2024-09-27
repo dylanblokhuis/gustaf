@@ -163,31 +163,33 @@ pub const RigidBody = struct {
                 @floatFromInt(voxel_coord_in_b[2]),
             } + m.Vec3{ 0.5, 0.5, 0.5 };
             const contact_point_world: m.Vec3 = m.vec.xyz(a_transform.multiplyVec4(m.Vec4{ contact_point_local[0], contact_point_local[1], contact_point_local[2], 1.0 }));
+            _ = contact_point_world; // autofix
 
             const i: i32 = @intCast(voxel_coord_in_b[0]);
             const j: i32 = @intCast(voxel_coord_in_b[1]);
             const k: i32 = @intCast(voxel_coord_in_b[2]);
 
-            const nx = @as(i32, @intFromBool(b.occupancy(i - 1, j, k))) - @as(i32, @intFromBool(b.occupancy(i + 1, j, k)));
-            const ny = @as(i32, @intFromBool(b.occupancy(i, j - 1, k))) - @as(i32, @intFromBool(b.occupancy(i, j + 1, k)));
-            const nz = @as(i32, @intFromBool(b.occupancy(i, j, k - 1))) - @as(i32, @intFromBool(b.occupancy(i, j, k + 1)));
+            // const nx = @as(i32, @intFromBool(b.occupancy(i - 1, j, k))) - @as(i32, @intFromBool(b.occupancy(i + 1, j, k)));
+            // const ny = @as(i32, @intFromBool(b.occupancy(i, j - 1, k))) - @as(i32, @intFromBool(b.occupancy(i, j + 1, k)));
+            // const nz = @as(i32, @intFromBool(b.occupancy(i, j, k - 1))) - @as(i32, @intFromBool(b.occupancy(i, j, k + 1)));
 
-            var normal_in_b = m.Vec3{
-                @floatFromInt(nx),
-                @floatFromInt(ny),
-                @floatFromInt(nz),
-            };
+            // var normal_in_b = m.Vec3{
+            //     @floatFromInt(nx),
+            //     @floatFromInt(ny),
+            //     @floatFromInt(nz),
+            // };
 
-            if (m.vec.len(normal_in_b) == 0.0) {
-                normal_in_b = pos_a_in_b - m.Vec3{
-                    @as(f32, @floatFromInt(i)) + 0.5,
-                    @as(f32, @floatFromInt(j)) + 0.5,
-                    @as(f32, @floatFromInt(k)) + 0.5,
-                };
-            }
+            // if (m.vec.len(normal_in_b) == 0.0) {
+            //     normal_in_b = pos_a_in_b - m.Vec3{
+            //         @as(f32, @floatFromInt(i)) + 0.5,
+            //         @as(f32, @floatFromInt(j)) + 0.5,
+            //         @as(f32, @floatFromInt(k)) + 0.5,
+            //     };
+            // }
 
-            normal_in_b = m.vec.normalize(normal_in_b);
-            const normal_in_world: m.Vec3 = m.quatMulVec3(b.rotation, m.Vec3{ normal_in_b[0], normal_in_b[1], normal_in_b[2] });
+            // normal_in_b = m.vec.normalize(normal_in_b);
+            // const normal_in_world: m.Vec3 = m.quatMulVec3(b.rotation, m.Vec3{ normal_in_b[0], normal_in_b[1], normal_in_b[2] });
+            // _ = normal_in_world; // autofix
 
             const voxel_center_a_world = m.vec.xyz(a_transform.multiplyVec4(m.Vec4{ pos_a[0], pos_a[1], pos_a[2], 1.0 }));
             const voxel_center_b_world = m.vec.xyz(b_transform.multiplyVec4(m.Vec4{
@@ -198,19 +200,37 @@ pub const RigidBody = struct {
                 1.0,
             }));
 
-            const overlap = voxel_center_b_world - voxel_center_a_world;
-            const penetration = 1.0 - m.vec.dot(overlap, normal_in_world);
+            c.DrawSphere(.{ .x = voxel_center_a_world[0], .y = voxel_center_a_world[1], .z = voxel_center_a_world[2] }, 0.1, c.RED);
 
-            if (penetration > 0.0) {
+            const delta = voxel_center_b_world - voxel_center_a_world;
+            const abs_delta = @abs(delta);
+            const penetration_x = 1.0 - abs_delta[0];
+            const penetration_y = 1.0 - abs_delta[1];
+            const penetration_z = 1.0 - abs_delta[2];
+
+            var min_penetration = penetration_x;
+            var normal = m.Vec3{ if (delta[0] >= 0) 1.0 else -1.0, 0.0, 0.0 };
+
+            if (penetration_y < min_penetration) {
+                min_penetration = penetration_y;
+                normal = m.Vec3{ 0.0, if (delta[1] >= 0) 1.0 else -1.0, 0.0 };
+            }
+
+            if (penetration_z < min_penetration) {
+                min_penetration = penetration_z;
+                normal = m.Vec3{ 0.0, 0.0, if (delta[2] >= 0) 1.0 else -1.0 };
+            }
+
+            normal = m.quatMulVec3(b.rotation, normal);
+
+            if (min_penetration > 0.0) {
                 try contacts.append(.{
                     .body_a = a_handle,
                     .body_b = b_handle,
-                    .world_position = contact_point_world,
-                    .world_normal = normal_in_world,
-                    .penetration = penetration,
-                    // .penetration = @min(penetration[0], @min(penetration[1], penetration[2])),
+                    .world_position = voxel_center_a_world,
+                    .world_normal = -normal,
+                    .penetration = min_penetration,
                 });
-                std.debug.print("[a: {d}] -  {d} {d} {d}\n", .{ a_handle.index, contact_point_world, normal_in_world, penetration });
             }
         }
     }
@@ -546,7 +566,7 @@ pub fn main() !void {
     };
 
     _ = try world.addBody(
-        .{ 0, 4, 0 },
+        .{ 1.3, 8, 0 },
         m.Quat.identity(),
         try voxelCube(allocator, .{ 1, 1, 1 }),
         .{ 1, 1, 1 },
@@ -563,7 +583,7 @@ pub fn main() !void {
     _ = try world.addBody(
         .{ 0, 2, 0 },
         m.Quat.identity(),
-        // m.Quat.fromEulerAngles(.{ m.radians(45.0), m.radians(45.0), m.radians(0.0) }),
+        // m.Quat.fromEulerAngles(.{ m.toRadians(45.0), m.toRadians(45.0), m.toRadians(0.0) }),
         try voxelCube(allocator, .{ 2, 2, 2 }),
         .{ 2, 2, 2 },
         true,
@@ -573,61 +593,107 @@ pub fn main() !void {
     c.SetTargetFPS(60);
 
     var camera = c.Camera{
-        .position = .{ .x = 0.0, .y = 10.0, .z = 10.0 },
+        .position = .{ .x = 0.0, .y = 8.0, .z = 8.0 },
         .target = .{ .x = 0.0, .y = 0.0, .z = 0.0 },
         .projection = c.CAMERA_PERSPECTIVE,
         .fovy = 45.0,
         .up = .{ .x = 0.0, .y = 1.0, .z = 0.0 },
     };
 
-    const cube_mesh = c.GenMeshCube(1.0, 1.0, 1.0);
-
-    const material = c.LoadMaterialDefault();
+    const cube_model = c.LoadModelFromMesh(c.GenMeshCube(1.0, 1.0, 1.0));
 
     while (!c.WindowShouldClose()) {
         c.UpdateCamera(&camera, c.CAMERA_ORBITAL);
-
-        if (c.IsKeyDown(c.KEY_SPACE)) {
-            try world.update(c.GetFrameTime());
-        }
 
         c.BeginDrawing();
         c.ClearBackground(c.RAYWHITE);
 
         c.BeginMode3D(camera);
         c.SetRandomSeed(0);
+        if (c.IsKeyDown(c.KEY_SPACE)) {
+            try world.update(c.GetFrameTime());
+        }
 
         var iter = world.bodies.denseIterator();
         while (iter.next()) |index| {
             const body = world.bodies.getUnchecked(index);
 
-            const mat1 = m.Mat4.translationVec3(body.position);
-            const mat2 = m.Mat4.fromQuaternion(body.rotation);
-            const mat3 = m.Mat4.scaling(
-                @floatFromInt(body.voxel_grid_size[0]),
-                @floatFromInt(body.voxel_grid_size[1]),
-                @floatFromInt(body.voxel_grid_size[2]),
+            // const mat1 = m.Mat4.translationVec3(body.position);
+            // const mat2 = m.Mat4.fromQuaternion(body.rotation);
+            // const mat3 = m.Mat4.scaling(
+            //     @floatFromInt(body.voxel_grid_size[0]),
+            //     @floatFromInt(body.voxel_grid_size[1]),
+            //     @floatFromInt(body.voxel_grid_size[2]),
+            // );
+            // const model = mat1.multiply(mat2.multiply(mat3)).transpose();
+
+            const rotation_axis: c.Vector3 = .{
+                .x = body.rotation.x,
+                .y = body.rotation.y,
+                .z = body.rotation.z,
+            };
+            const rotation_angle = 2.0 * m.acos(body.rotation.w);
+
+            // std.debug.print("{} {d}\n", .{ body.rotation, angle });
+
+            c.DrawModelWiresEx(
+                cube_model,
+                .{ .x = body.position[0], .y = body.position[1], .z = body.position[2] },
+                rotation_axis,
+                m.toDegrees(rotation_angle),
+                .{ .x = @floatFromInt(body.voxel_grid_size[0]), .y = @floatFromInt(body.voxel_grid_size[1]), .z = @floatFromInt(body.voxel_grid_size[2]) },
+                c.RED,
             );
-            const model = mat1.multiply(mat2.multiply(mat3)).transpose();
-            material.maps.*.color = .{ .r = @intCast(c.GetRandomValue(0, 255)), .g = @intCast(c.GetRandomValue(0, 255)), .b = @intCast(c.GetRandomValue(0, 255)), .a = 255 };
-            c.DrawMesh(cube_mesh, material, .{
-                .m0 = model.data[0],
-                .m1 = model.data[1],
-                .m2 = model.data[2],
-                .m3 = model.data[3],
-                .m4 = model.data[4],
-                .m5 = model.data[5],
-                .m6 = model.data[6],
-                .m7 = model.data[7],
-                .m8 = model.data[8],
-                .m9 = model.data[9],
-                .m10 = model.data[10],
-                .m11 = model.data[11],
-                .m12 = model.data[12],
-                .m13 = model.data[13],
-                .m14 = model.data[14],
-                .m15 = model.data[15],
-            });
+
+            // c.DrawModelWires(cube_model, .{ .x = 0, .y = 0, .z = 0 }, 1.0, c.RED);
+
+            // _ = model; // autofix
+            // material.maps.*.color = .{ .r = @intCast(c.GetRandomValue(0, 255)), .g = @intCast(c.GetRandomValue(0, 255)), .b = @intCast(c.GetRandomValue(0, 255)), .a = 255 };
+            // c.DrawBoundingBox(., color: Color)
+            // const raylib_model: c.Model = .{
+            //     .transform = .{
+            //         .m0 = model.data[0],
+            //         .m1 = model.data[1],
+            //         .m2 = model.data[2],
+            //         .m3 = model.data[3],
+            //         .m4 = model.data[4],
+            //         .m5 = model.data[5],
+            //         .m6 = model.data[6],
+            //         .m7 = model.data[7],
+            //         .m8 = model.data[8],
+            //         .m9 = model.data[9],
+            //         .m10 = model.data[10],
+            //         .m11 = model.data[11],
+            //         .m12 = model.data[12],
+            //         .m13 = model.data[13],
+            //         .m14 = model.data[14],
+            //         .m15 = model.data[15],
+            //     },
+            //     .materials = @ptrCast(&material),
+            //     .materialCount = 1,
+            //     .meshes = @ptrCast(&cube_mesh),
+            //     .meshCount = 1,
+            //     .boneCount = 0,
+            //     .meshMaterial = material.z
+            // };
+            // c.DrawMesh(cube_mesh, material, .{
+            //     .m0 = model.data[0],
+            //     .m1 = model.data[1],
+            //     .m2 = model.data[2],
+            //     .m3 = model.data[3],
+            //     .m4 = model.data[4],
+            //     .m5 = model.data[5],
+            //     .m6 = model.data[6],
+            //     .m7 = model.data[7],
+            //     .m8 = model.data[8],
+            //     .m9 = model.data[9],
+            //     .m10 = model.data[10],
+            //     .m11 = model.data[11],
+            //     .m12 = model.data[12],
+            //     .m13 = model.data[13],
+            //     .m14 = model.data[14],
+            //     .m15 = model.data[15],
+            // });
         }
         c.EndMode3D();
         c.EndDrawing();

@@ -112,7 +112,7 @@ fn asin(v: f32) f32 {
     return if (v >= 0.0) 0.5 * math.pi - result else result - 0.5 * math.pi;
 }
 
-fn acos(v: f32) f32 {
+pub fn acos(v: f32) f32 {
     const x = @abs(v);
     var omx = 1.0 - x;
     if (omx < 0.0) {
@@ -166,8 +166,12 @@ pub fn quatToAxisAngle(q: Quat) struct { Vec3, f32 } {
     return .{ Vec3{ q.x, q.y, q.z }, angle };
 }
 
-pub inline fn radians(degrees: f32) f32 {
+pub inline fn toRadians(degrees: f32) f32 {
     return degrees * math.pi / 180.0;
+}
+
+pub inline fn toDegrees(radians: f32) f32 {
+    return radians * 180.0 / math.pi;
 }
 
 pub inline fn mulAdd(v0: anytype, v1: anytype, v2: anytype) @TypeOf(v0, v1, v2) {
